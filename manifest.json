@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "zakarch.islands",
+  "name": "Islands",
+  "version": "1.0.0",
+  "author": "zakaryae",
+  "license": "MIT",
+  "description": "Workspace numbers that also restyle the stock bar as three floating islands with a Prism-colored border.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Islands.qml"
+  },
+  "barWidget": {
+    "displayName": "Islands",
+    "description": "Workspaces + island style for the whole bar",
+    "category": "Appearance",
+    "defaultSection": "left",
+    "allowMultiple": false
+  }
+}
