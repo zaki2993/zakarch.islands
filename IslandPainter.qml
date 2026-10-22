@@ -164,7 +164,7 @@ Item {
   function refresh() {
     if (vertical) { detach(); return }
     suppressCenterReveal()
-    if (attached()) return
+    if (attached()) { tuneIcons(); return }
     detach()
 
     var win = host ? host.QsWindow.window : null
@@ -199,6 +199,11 @@ Item {
       }
     }
 
+    var right = []
+    for (var r = 0; r < groups.length; r++) if (groups[r].region === "right") right = right.concat(groups[r].sections)
+    rightSections = right
+    tuneIcons()
+
     win.color = "transparent"
     barWindow = win
     edgeLists = edges
@@ -207,6 +212,7 @@ Item {
   }
 
   function detach() {
+    untuneIcons()
     for (var i = 0; i < islands.length; i++) if (islands[i]) islands[i].destroy()
     for (var h = 0; h < hoverHandlers.length; h++) if (hoverHandlers[h]) hoverHandlers[h].destroy()
     for (var e = 0; e < edgeLists.length; e++) {
@@ -242,6 +248,68 @@ Item {
   Component {
     id: hoverComponent
     HoverHandler {}
+  }
+
+  // ── even icons in the right island ────────────────────────────────────────
+  // Icon glyphs are all about as tall but differ a lot in width, so fixed
+  // slots leave uneven gaps. Each icon slot becomes its painted width plus
+  // one shared gap, and each glyph is scaled (±10%) toward the same visual
+  // area. Only icon buttons (BarIconButton) are touched.
+  readonly property real iconGap: Style.space(14)
+  property var rightSections: []
+  property var tunedIcons: []
+
+  FontMetrics { id: iconMetrics; font.family: Style.font.family; font.pixelSize: Style.bar.iconFont }
+
+  function iconFontFor(text) {
+    var r = iconMetrics.tightBoundingRect(text)
+    if (r.width <= 0 || r.height <= 0) return Style.bar.iconFont
+    var target = Style.bar.iconFont * 0.92
+    var scale = Math.max(0.9, Math.min(1.1, target / Math.sqrt(r.width * r.height)))
+    return Style.bar.iconFont * scale
+  }
+
+  function isIconButton(item) {
+    return item && ("glyphPaintedWidth" in item) && ("slotSize" in item) && ("opticalSize" in item)
+  }
+
+  function tuneIcon(btn) {
+    btn.fontSize = Qt.binding(function() { return btn.labelVisible ? Style.font.body : root.iconFontFor(btn.text) })
+    btn.fixedWidth = Qt.binding(function() {
+      if (btn.vertical || btn.labelVisible) return -1
+      return (btn.iconComponent !== null ? btn.opticalSize : btn.glyphPaintedWidth) + root.iconGap
+    })
+  }
+
+  // Same expressions BarIconButton (and zakarch.space's label mode) use.
+  function restoreIcon(btn) {
+    btn.fontSize = Qt.binding(function() { return btn.labelVisible ? Style.font.body : Style.bar.iconFont })
+    btn.fixedWidth = Qt.binding(function() { return btn.vertical || btn.labelVisible ? -1 : btn.slotSize })
+  }
+
+  // Runs every refresh so widgets that appear or reload later get tuned too.
+  function tuneIcons() {
+    var tuned = tunedIcons.filter(function(b) { return b && b.parent })
+    var queue = rightSections.filter(function(s) { return s && s.parent })
+    while (queue.length) {
+      var item = queue.shift()
+      if (isIconButton(item)) {
+        if (tuned.indexOf(item) === -1) {
+          tuneIcon(item)
+          tuned.push(item)
+        }
+        continue
+      }
+      var kids = item && item.children ? item.children : []
+      for (var k = 0; k < kids.length; k++) queue.push(kids[k])
+    }
+    tunedIcons = tuned
+  }
+
+  function untuneIcons() {
+    for (var i = 0; i < tunedIcons.length; i++) if (tunedIcons[i] && tunedIcons[i].parent) restoreIcon(tunedIcons[i])
+    tunedIcons = []
+    rightSections = []
   }
 
   // ── one island ────────────────────────────────────────────────────────────

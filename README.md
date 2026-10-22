@@ -13,6 +13,8 @@ borders follow Prism live.
 - **Borders follow your windows**: color or gradient from the window border, laid out as one
   light across all three islands. With Prism, they also follow its spin, breathe and glow.
 - **Hover**: hovering an island brightens its border and background.
+- **Even icons**: icons in the right island get the same gap between them and are scaled
+  (±10%) to look the same size, whatever plugin they come from.
 - **Workspaces**: numbers, with an underline in the border color on the active one
   (1-5 always, plus any other workspace in use).
 - **Steady center**: hidden indicators no longer pop in when you hover the center, so the
