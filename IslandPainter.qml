@@ -4,28 +4,22 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 
-// Restyles the stock bar that `host` (a bar widget) sits in: the bar window
-// turns clear and each section (left, center, right) floats as a rounded
-// island. Sections are found by shape (items with `region`), so if a future
-// bar changes its internals the islands just stop showing.
-//
-// The island borders follow Prism: the colors come from the shell's
-// hyprland.active-border token (which Prism keeps in sync), laid out as one
-// gradient across the whole bar, and Prism's spin / breathe / glow settings
-// animate it. Hovering an island brightens it.
+// Turns the top/bottom bar into three floating machined-glass islands — left,
+// center, right — with top specular lighting, a cursor-tracking rim spotlight,
+// hairline section dividers, icon micro-hover pills, and full Prism support.
 Item {
   id: root
 
-  property Item host: null
+  required property var host
   readonly property var bar: host ? host.bar : null
-  readonly property bool vertical: host ? host.vertical : false
+  readonly property bool vertical: bar ? bar.vertical === true : false
 
-  // The side gap matches Hyprland's gaps_out so islands line up with windows.
   readonly property int sideGap: 10
   readonly property int inset: 3
-  readonly property real pad: Style.space(7)
+  readonly property real pad: Style.space(8)
   readonly property bool glass: bar ? bar.transparent === true : false
   readonly property color fill: Color.bar.background
+  readonly property color fgColor: bar ? bar.barForeground : Color.bar.text
 
   // ── Prism link ────────────────────────────────────────────────────────────
   readonly property var borderSpec: Border.hyprlandActiveSpec(Color.bar.active, 1)
@@ -106,9 +100,6 @@ Item {
   onBreathMsChanged: if (breathAnim.running) breathAnim.restart()
 
   // ── no hover growth in the center ─────────────────────────────────────────
-  // The bar reveals inactive indicators while the center is hovered, which
-  // makes the center island grow under the cursor. Keep that suppressed; the
-  // clock and weather popups switch it back off when they close.
   function suppressCenterReveal() {
     if (bar && typeof bar.setCenterHoverRevealSuppressed === "function" && !bar.centerHoverRevealSuppressed)
       bar.setCenterHoverRevealSuppressed(true)
@@ -130,8 +121,6 @@ Item {
     return item && ("region" in item) && (("entries" in item) || ("entry" in item))
   }
 
-  // Groups top-level section items by parent: left and right lists share the
-  // bar row, the center pieces (before, anchor, after) share their own row.
   function findGroups(top) {
     var groups = []
     var stack = [top]
@@ -164,7 +153,13 @@ Item {
   function refresh() {
     if (vertical) { detach(); return }
     suppressCenterReveal()
-    if (attached()) { tuneIcons(); return }
+    if (attached()) {
+      tuneIcons()
+      for (var i = 0; i < islands.length; i++) {
+        if (islands[i] && typeof islands[i].updateDivider === "function") islands[i].updateDivider()
+      }
+      return
+    }
     detach()
 
     var win = host ? host.QsWindow.window : null
@@ -175,20 +170,23 @@ Item {
     var made = []
     var handlers = []
     var edges = []
+    var allSec = []
     for (var g = 0; g < groups.length; g++) {
       var group = groups[g]
+      allSec = allSec.concat(group.sections)
 
-      // Hover is tracked on the sections themselves: as ancestors of the
-      // widgets they stay hovered while the pointer is over a widget.
       var groupHandlers = []
       for (var s = 0; s < group.sections.length; s++) {
         var handler = hoverComponent.createObject(group.sections[s])
         if (handler) groupHandlers.push(handler)
       }
       handlers = handlers.concat(groupHandlers)
-      made.push(islandComponent.createObject(group.parent, { sections: group.sections, handlers: groupHandlers }))
+      made.push(islandComponent.createObject(group.parent, {
+        region: group.region,
+        sections: group.sections,
+        handlers: groupHandlers
+      }))
 
-      // Pull the side sections in so their islands sit on the window gap line.
       if (group.region === "left" || group.region === "right") {
         for (var e = 0; e < group.sections.length; e++) {
           var list = group.sections[e]
@@ -202,6 +200,7 @@ Item {
     var right = []
     for (var r = 0; r < groups.length; r++) if (groups[r].region === "right") right = right.concat(groups[r].sections)
     rightSections = right
+    allSections = allSec
     tuneIcons()
 
     win.color = "transparent"
@@ -209,6 +208,10 @@ Item {
     edgeLists = edges
     hoverHandlers = handlers
     islands = made
+
+    for (var m = 0; m < islands.length; m++) {
+      if (islands[m] && typeof islands[m].updateDivider === "function") islands[m].updateDivider()
+    }
   }
 
   function detach() {
@@ -235,8 +238,6 @@ Item {
     if (bar && typeof bar.setCenterHoverRevealSuppressed === "function") bar.setCenterHoverRevealSuppressed(false)
   }
 
-  // The bar builds its sections asynchronously and rebuilds them when it
-  // changes, so keep checking that the islands are still in place.
   Timer {
     interval: 1000
     running: true
@@ -250,14 +251,35 @@ Item {
     HoverHandler {}
   }
 
-  // ── even icons in the right island ────────────────────────────────────────
-  // Icon glyphs are all about as tall but differ a lot in width, so fixed
-  // slots leave uneven gaps. Each icon slot becomes its painted width plus
-  // one shared gap, and each glyph is scaled (±10%) toward the same visual
-  // area. Only icon buttons (BarIconButton) are touched.
+  // Subtle concentric hover capsule behind individual bar icons
+  Component {
+    id: iconHoverPillComponent
+
+    Rectangle {
+      id: pill
+      required property var targetButton
+      z: -1
+      visible: targetButton && !targetButton.vertical && targetButton.visible
+      anchors.centerIn: parent
+      width: targetButton ? Math.max(18, targetButton.width - 4) : 0
+      height: targetButton ? Math.max(18, targetButton.height - 12) : 0
+      radius: height / 2
+      color: Qt.rgba(root.fgColor.r, root.fgColor.g, root.fgColor.b, 0.09)
+      opacity: targetButton && targetButton.tooltipHovered ? 1 : 0
+
+      Behavior on opacity {
+        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+      }
+    }
+  }
+
+  // ── even icons + micro-hover pills ────────────────────────────────────────
   readonly property real iconGap: Style.space(14)
   property var rightSections: []
+  property var allSections: []
   property var tunedIcons: []
+  property var iconHoverButtons: []
+  property var iconHoverPills: []
 
   FontMetrics { id: iconMetrics; font.family: Style.font.family; font.pixelSize: Style.bar.iconFont }
 
@@ -281,13 +303,20 @@ Item {
     })
   }
 
-  // Same expressions BarIconButton (and zakarch.space's label mode) use.
   function restoreIcon(btn) {
     btn.fontSize = Qt.binding(function() { return btn.labelVisible ? Style.font.body : Style.bar.iconFont })
     btn.fixedWidth = Qt.binding(function() { return btn.vertical || btn.labelVisible ? -1 : btn.slotSize })
   }
 
-  // Runs every refresh so widgets that appear or reload later get tuned too.
+  function attachHoverPill(btn) {
+    if (iconHoverButtons.indexOf(btn) !== -1) return
+    var pill = iconHoverPillComponent.createObject(btn, { targetButton: btn })
+    if (pill) {
+      iconHoverButtons.push(btn)
+      iconHoverPills.push(pill)
+    }
+  }
+
   function tuneIcons() {
     var tuned = tunedIcons.filter(function(b) { return b && b.parent })
     var queue = rightSections.filter(function(s) { return s && s.parent })
@@ -298,31 +327,78 @@ Item {
           tuneIcon(item)
           tuned.push(item)
         }
+        attachHoverPill(item)
         continue
       }
       var kids = item && item.children ? item.children : []
       for (var k = 0; k < kids.length; k++) queue.push(kids[k])
     }
     tunedIcons = tuned
+
+    // Also give icon buttons in left/center islands (like omarchy.menu) the same crisp hover pill
+    var allQueue = allSections.filter(function(s) { return s && s.parent })
+    while (allQueue.length) {
+      var node = allQueue.shift()
+      if (isIconButton(node)) {
+        attachHoverPill(node)
+        continue
+      }
+      var children = node && node.children ? node.children : []
+      for (var c = 0; c < children.length; c++) allQueue.push(children[c])
+    }
   }
 
   function untuneIcons() {
     for (var i = 0; i < tunedIcons.length; i++) if (tunedIcons[i] && tunedIcons[i].parent) restoreIcon(tunedIcons[i])
+    for (var p = 0; p < iconHoverPills.length; p++) if (iconHoverPills[p]) iconHoverPills[p].destroy()
     tunedIcons = []
+    iconHoverButtons = []
+    iconHoverPills = []
     rightSections = []
+    allSections = []
   }
 
-  // ── one island ────────────────────────────────────────────────────────────
+  // ── system widget boundary helper (for hairline dividers) ─────────────────
+  readonly property var systemModules: ({
+    "zakarch.audio": true,
+    "omarchy.audio": true,
+    "zakarch.monitor": true,
+    "omarchy.monitor": true,
+    "zakarch.power": true,
+    "omarchy.power": true,
+    "omarchy.battery": true,
+    "zakarch.network": true,
+    "omarchy.network": true,
+    "omarchy.bluetooth": true
+  })
+
+  function collectSlots(sections) {
+    var slots = []
+    var queue = sections.slice()
+    while (queue.length) {
+      var item = queue.shift()
+      if (!item || !item.visible) continue
+      if (("moduleName" in item) && ("region" in item) && item.width > 0) {
+        slots.push(item)
+        continue
+      }
+      var kids = item.children ? item.children : []
+      for (var i = 0; i < kids.length; i++) queue.push(kids[i])
+    }
+    return slots
+  }
+
+  // ── one machined-glass island ─────────────────────────────────────────────
   Component {
     id: islandComponent
 
     Item {
       id: island
 
+      property string region: ""
       property var sections: []
       property var handlers: []
 
-      // Span of the visible, non-empty sections in the shared parent's coordinates
       function span() {
         var from = Infinity
         var to = -Infinity
@@ -339,12 +415,78 @@ Item {
         for (var i = 0; i < handlers.length; i++) if (handlers[i] && handlers[i].hovered) return true
         return false
       }
+
+      readonly property point pointerPos: {
+        for (var i = 0; i < handlers.length; i++) {
+          var h = handlers[i]
+          if (h && h.hovered && h.parent) {
+            return Qt.point(h.parent.x + h.point.position.x - island.x,
+                            h.parent.y + h.point.position.y - island.y)
+          }
+        }
+        return Qt.point(island.width / 2, island.height / 2)
+      }
+
+      property real lastPointerX: width / 2
+      property real lastPointerY: height / 2
+      onPointerPosChanged: {
+        if (hovered) {
+          lastPointerX = pointerPos.x
+          lastPointerY = pointerPos.y
+        }
+      }
+
+      // Hairline divider position in island coordinates (-1 when none)
+      property real dividerX: -1
+      function updateDivider() {
+        if (region !== "left" && region !== "right") { dividerX = -1; return }
+        var slots = root.collectSlots(sections)
+        if (slots.length < 2) { dividerX = -1; return }
+
+        // Sort left-to-right in island coordinates
+        var mapped = []
+        for (var i = 0; i < slots.length; i++) {
+          var pt = slots[i].mapToItem(island, 0, 0)
+          mapped.push({ slot: slots[i], x: pt.x, w: slots[i].width, name: String(slots[i].moduleName || "") })
+        }
+        mapped.sort(function(a, b) { return a.x - b.x })
+
+        if (region === "left") {
+          for (var l = 1; l < mapped.length; l++) {
+            if (mapped[l].name === "zakarch.islands" || mapped[l].name === "omarchy.workspaces") {
+              dividerX = Math.round(mapped[l].x + 2)
+              return
+            }
+          }
+          dividerX = -1
+          return
+        }
+
+        if (region === "right") {
+          var seenTool = false
+          for (var r = 0; r < mapped.length; r++) {
+            var isSys = !!root.systemModules[mapped[r].name]
+            if (isSys && seenTool) {
+              var prevRight = mapped[r - 1].x + mapped[r - 1].w
+              dividerX = Math.round((prevRight + mapped[r].x) / 2) + 1
+              return
+            }
+            if (!isSys) seenTool = true
+          }
+        }
+        dividerX = -1
+      }
+
+      onWidthChanged: updateDivider()
+      onXChanged: updateDivider()
+
       readonly property var range: span()
       readonly property var ends: root.endpoints(island)
       readonly property real radius: height / 2
-      property real borderLevel: hovered ? 1 : 0.7
+      readonly property real effectiveTint: Math.max(0.045, root.tintAlpha)
+      property real borderLevel: hovered ? 0.68 : 0.36
 
-      Behavior on borderLevel { NumberAnimation { duration: 150 } }
+      Behavior on borderLevel { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
 
       z: -1
       visible: range.to > range.from
@@ -356,37 +498,57 @@ Item {
       Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
       Behavior on width { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
-      // Soft two-step shadow just below the island
+      // Soft two-step drop shadow beneath the island
       Rectangle {
         anchors.fill: parent
-        anchors.topMargin: 2
-        anchors.bottomMargin: -2
+        anchors.topMargin: 2.5
+        anchors.bottomMargin: -2.5
         radius: island.radius
-        color: Qt.rgba(0, 0, 0, 0.12)
+        color: Qt.rgba(0, 0, 0, 0.16)
       }
       Rectangle {
         anchors.fill: parent
         anchors.topMargin: 1
         anchors.bottomMargin: -1
         radius: island.radius
-        color: Qt.rgba(0, 0, 0, 0.22)
+        color: Qt.rgba(0, 0, 0, 0.28)
       }
 
+      // Base machined surface
       Rectangle {
         anchors.fill: parent
         radius: island.radius
         color: {
-          var base = root.glass ? Qt.rgba(root.fill.r, root.fill.g, root.fill.b, 0.35) : root.fill
-          return island.hovered ? Qt.lighter(base, 1.35) : base
+          var base = root.glass
+            ? Qt.rgba(root.fill.r, root.fill.g, root.fill.b, 0.42)
+            : Qt.rgba(root.fill.r, root.fill.g, root.fill.b, 0.94)
+          return island.hovered ? Qt.lighter(base, 1.14) : base
         }
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: 160 } }
       }
 
-      // Prism glow: a faint wash of the border colors inside the island
+      // Vertical surface depth sheen (soft top ambient light -> subtle underside shade)
       Shape {
         anchors.fill: parent
-        visible: root.tintAlpha > 0
-        opacity: root.tintAlpha * root.breath
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+          strokeWidth: -1
+          fillGradient: LinearGradient {
+            x1: 0; y1: 0; x2: 0; y2: island.height
+            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.065) }
+            GradientStop { position: 0.42; color: Qt.rgba(1, 1, 1, 0.01) }
+            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.14) }
+          }
+          PathSvg { path: root.roundRect(0, 0, island.width, island.height, island.radius) }
+        }
+      }
+
+      // Subtle ambient accent wash (scales seamlessly with Prism glow)
+      Shape {
+        anchors.fill: parent
+        visible: island.effectiveTint > 0
+        opacity: island.effectiveTint * root.breath
         preferredRendererType: Shape.CurveRenderer
 
         ShapePath {
@@ -402,7 +564,36 @@ Item {
         }
       }
 
-      // Border ring in the Prism colors; calm at rest, full on hover
+      // Delicate top inner specular catchlight (glass bevel feel)
+      Shape {
+        anchors.fill: parent
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+          strokeWidth: -1
+          fillRule: ShapePath.OddEvenFill
+          fillGradient: LinearGradient {
+            x1: 0; y1: 0; x2: 0; y2: island.height
+            GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, island.hovered ? 0.22 : 0.16) }
+            GradientStop { position: 0.38; color: Qt.rgba(1, 1, 1, 0.03) }
+            GradientStop { position: 0.65; color: Qt.rgba(1, 1, 1, 0.0) }
+            GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.0) }
+          }
+          PathSvg {
+            path: root.roundRect(root.lineWidth, root.lineWidth,
+                                 island.width - root.lineWidth * 2,
+                                 island.height - root.lineWidth * 2,
+                                 island.radius - root.lineWidth)
+              + " "
+              + root.roundRect(root.lineWidth + 1, root.lineWidth + 1,
+                               island.width - (root.lineWidth + 1) * 2,
+                               island.height - (root.lineWidth + 1) * 2,
+                               island.radius - (root.lineWidth + 1))
+          }
+        }
+      }
+
+      // Refined outer border ring in Prism / theme accent colors
       Shape {
         anchors.fill: parent
         opacity: root.breath * island.borderLevel
@@ -424,6 +615,49 @@ Item {
                                island.height - root.lineWidth * 2, island.radius - root.lineWidth)
           }
         }
+      }
+
+      // Cursor-tracking specular border spotlight
+      Shape {
+        anchors.fill: parent
+        opacity: island.hovered ? 0.95 : 0
+        visible: opacity > 0.01
+        preferredRendererType: Shape.CurveRenderer
+
+        Behavior on opacity {
+          NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        }
+
+        ShapePath {
+          strokeWidth: -1
+          fillRule: ShapePath.OddEvenFill
+          fillGradient: RadialGradient {
+            centerX: island.lastPointerX
+            centerY: island.lastPointerY
+            focalX: island.lastPointerX
+            focalY: island.lastPointerY
+            centerRadius: 72
+            GradientStop { position: 0.0; color: Qt.lighter(root.stopColor(0), 1.35) }
+            GradientStop { position: 0.45; color: Qt.rgba(root.stopColor(0).r, root.stopColor(0).g, root.stopColor(0).b, 0.45) }
+            GradientStop { position: 1.0; color: Qt.rgba(root.stopColor(0).r, root.stopColor(0).g, root.stopColor(0).b, 0.0) }
+          }
+          PathSvg {
+            path: root.roundRect(0, 0, island.width, island.height, island.radius) + " "
+              + root.roundRect(root.lineWidth, root.lineWidth, island.width - root.lineWidth * 2,
+                               island.height - root.lineWidth * 2, island.radius - root.lineWidth)
+          }
+        }
+      }
+
+      // Subtle vertical hairline divider (Menu | Workspaces on left, Tools | System on right)
+      Rectangle {
+        visible: island.dividerX > 8 && island.dividerX < island.width - 8
+        x: island.dividerX
+        anchors.verticalCenter: parent.verticalCenter
+        width: 1
+        height: Math.max(10, Math.round(island.height * 0.44))
+        radius: 0.5
+        color: Qt.rgba(root.fgColor.r, root.fgColor.g, root.fgColor.b, 0.16)
       }
     }
   }
