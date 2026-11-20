@@ -145,17 +145,6 @@ BarWidget {
             }
           }
 
-          // Subtle occupied indicator dot for unfocused workspaces with open windows
-          Rectangle {
-            visible: wsBtn.occupied && !wsBtn.focused && !root.vertical
-            width: 3
-            height: 3
-            radius: 1.5
-            color: Qt.rgba(root.accentPrimary.r, root.accentPrimary.g, root.accentPrimary.b, 0.7)
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: 6.5
-          }
         }
       }
     }

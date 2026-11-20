@@ -14,13 +14,12 @@ installed, the borders follow Prism live.
 - **Borders follow your windows**: color or gradient from the window border, laid out as one
   light across all three islands. With Prism, they also follow its spin, breathe and glow.
 - **Cursor-tracking hover & icon pills**: sweeping over an island casts a soft radial spotlight
-  along the border that follows your cursor, while individual icons get subtle concentric hover pills.
+  along the border that follows your cursor, while individual icons rest calmly and lift subtly inside concentric hover pills.
 - **Hairline dividers & even icons**: subtle vertical dividers separate menu from workspaces on
   the left and custom tools from system controls on the right. Icons in the right island get the
   same gap between them and are scaled (±10%) to look the same size, whatever plugin they come from.
-- **Sliding workspace capsule**: a smoothly gliding glass capsule highlights the active workspace,
-  with subtle occupied dots under unfocused workspaces that have open windows (1-5 always, plus
-  any other workspace in use).
+- **Sliding workspace capsule**: a smoothly gliding glass capsule highlights the active workspace
+  (1-5 always, plus any other workspace in use).
 - **Steady center**: hidden indicators no longer pop in when you hover the center, so the
   center island keeps its size. Indicators that are on (recording, Do Not Disturb, ...) still show.
 - **Stock bar**: it restyles the stock Omarchy bar instead of replacing it, so every other

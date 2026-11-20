@@ -251,13 +251,18 @@ Item {
     HoverHandler {}
   }
 
-  // Subtle concentric hover capsule behind individual bar icons
+  // Subtle concentric hover capsule + calm resting opacity & tactile micro-lift
   Component {
     id: iconHoverPillComponent
 
     Rectangle {
       id: pill
       required property var targetButton
+      property var canvas: null
+      property real restOpacity: 0.86
+      property real hoverScale: targetButton && targetButton.tooltipHovered ? 1.07 : 1.0
+      property real iconOpacity: targetButton && targetButton.tooltipHovered ? 1.0 : restOpacity
+
       z: -1
       visible: targetButton && !targetButton.vertical && targetButton.visible
       anchors.centerIn: parent
@@ -269,6 +274,25 @@ Item {
 
       Behavior on opacity {
         NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+      }
+      Behavior on hoverScale {
+        NumberAnimation { duration: 130; easing.type: Easing.OutCubic }
+      }
+      Behavior on iconOpacity {
+        NumberAnimation { duration: 130; easing.type: Easing.OutCubic }
+      }
+
+      Binding {
+        target: pill.canvas
+        property: "scale"
+        value: pill.hoverScale
+        when: pill.canvas !== null
+      }
+      Binding {
+        target: pill.canvas
+        property: "opacity"
+        value: pill.iconOpacity
+        when: pill.canvas !== null
       }
     }
   }
@@ -308,9 +332,20 @@ Item {
     btn.fixedWidth = Qt.binding(function() { return btn.vertical || btn.labelVisible ? -1 : btn.slotSize })
   }
 
+  function findOpticalCanvas(btn) {
+    if (!btn || !btn.children) return null
+    for (var i = 0; i < btn.children.length; i++) {
+      var child = btn.children[i]
+      if (child && Math.abs(child.width - btn.opticalSize) < 0.5 && Math.abs(child.height - btn.opticalSize) < 0.5)
+        return child
+    }
+    return null
+  }
+
   function attachHoverPill(btn) {
     if (iconHoverButtons.indexOf(btn) !== -1) return
-    var pill = iconHoverPillComponent.createObject(btn, { targetButton: btn })
+    var canvas = findOpticalCanvas(btn)
+    var pill = iconHoverPillComponent.createObject(btn, { targetButton: btn, canvas: canvas })
     if (pill) {
       iconHoverButtons.push(btn)
       iconHoverPills.push(pill)
